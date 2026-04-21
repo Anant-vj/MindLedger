@@ -30,12 +30,17 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
+    console.log("Auth listener initializing...");
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log("Auth state changed, user:", user ? user.uid : "null");
       setCurrentUser(user);
       setLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      console.log("Auth listener unsubscribing");
+      unsubscribe();
+    };
   }, []);
 
   const value = {
@@ -48,7 +53,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 }

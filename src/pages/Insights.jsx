@@ -25,11 +25,10 @@ import {
 const COLORS = ['#6366f1', '#06b6d4', '#f59e0b', '#ef4444'];
 
 export default function Insights() {
-  const { tasks, habits } = useData();
+  const { tasks } = useData();
   const { 
     productivityScore, 
     burnoutRisk, 
-    habitConsistency,
     completedTasks,
     totalTasks
   } = useProductivity();
@@ -43,19 +42,13 @@ export default function Insights() {
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
   }, [tasks]);
 
-  // Habit Completion Rate
-  const habitData = useMemo(() => {
-    return habits.map(h => ({
-      name: h.title,
-      completions: h.completions?.length || 0
-    })).slice(0, 5);
-  }, [habits]);
+
 
   const getInsightMessage = () => {
     if (burnoutRisk === 'High') {
       return {
-        title: "Burnout Alert!",
-        text: "Your workload density is extremely high while habit consistency is dropping. We recommend rescheduling 2-3 non-essential tasks and taking a 15-minute break.",
+        title: "High Workload Detected!",
+        text: "Your current task density is very high. We recommend rescheduling 2-3 non-essential tasks and taking a 15-minute break to avoid burnout.",
         icon: ShieldAlert,
         color: "text-red-600 bg-red-50 border-red-100"
       };
@@ -168,36 +161,6 @@ export default function Insights() {
           </div>
         </Card>
 
-        {/* Habit Performance */}
-        <Card className="lg:col-span-2">
-          <h3 className="font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-             <Target size={18} className="text-[#6366F1]" /> Habit Consistency
-          </h3>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={habitData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false}
-                  tick={{ fill: '#94a3b8', fontSize: 12 }}
-                />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <Tooltip 
-                  cursor={{ fill: 'rgba(99, 102, 241, 0.1)' }}
-                  contentStyle={{ borderRadius: '12px', border: '1px solid var(--color-saas-border)', backgroundColor: 'var(--color-saas-card)', color: '#F9FAFB' }}
-                />
-                <Bar 
-                  dataKey="completions" 
-                  fill="#6366f1" 
-                  radius={[6, 6, 0, 0]} 
-                  barSize={40}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
       </div>
 
       <div className="bg-slate-900 dark:bg-gradient-to-br dark:from-[#1F2937] dark:to-[#111827] text-white p-8 rounded-3xl relative overflow-hidden dark:border dark:border-[#374151]">
@@ -213,8 +176,8 @@ export default function Insights() {
             </div>
             <div className="w-px h-10 bg-slate-800" />
             <div className="flex flex-col">
-              <span className="text-3xl font-bold">{habitConsistency}%</span>
-              <span className="text-xs text-slate-500 uppercase font-bold tracking-widest">Habit Level</span>
+              <span className="text-3xl font-bold">{productivityScore}%</span>
+              <span className="text-xs text-slate-500 uppercase font-bold tracking-widest">Overall Success</span>
             </div>
           </div>
         </div>

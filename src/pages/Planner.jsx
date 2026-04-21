@@ -6,6 +6,7 @@ import {
   query, 
   onSnapshot, 
   addDoc, 
+  setDoc,
   updateDoc, 
   deleteDoc, 
   doc,
@@ -28,7 +29,9 @@ import {
   Check, 
   Trash2,
   Calendar,
-  BarChart2
+  BarChart2,
+  X,
+  RotateCcw
 } from 'lucide-react';
 import { Card, Button, Input, cn } from '../components/ui';
 
@@ -50,11 +53,70 @@ export default function Planner() {
   
   const daysInWeek = eachDayOfInterval({ start: weekStart, end: weekEnd });
 
-  // Mobile Tabs
   const [activeTab, setActiveTab] = useState(format(startOfToday(), 'EEEE'));
 
   const nextWeek = () => setCurrentDate(addWeeks(currentDate, 1));
   const prevWeek = () => setCurrentDate(subWeeks(currentDate, 1));
+
+  const [recurringTasks, setRecurringTasks] = useState([]);
+  const [isAddingRecurring, setIsAddingRecurring] = useState(false);
+  const [newRecurringTask, setNewRecurringTask] = useState({
+    title: '',
+    days: [] // e.g. ['Monday', 'Wednesday']
+  });
+
+  useEffect(() => {
+    if (!currentUser || !weekId) return;
+    console.log("Setting up recurring tasks listener for user:", currentUser.uid, "weekId:", weekId);
+    
+    // Fixed path: users/{uid}/planner/recurring/tasks (5 segments - collection)
+    const recurringRef = collection(db, "users", currentUser.uid, "planner", "recurring", "tasks");
+    
+    const unsubscribe = onSnapshot(recurringRef, (snapshot) => {
+      const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log("Recurring tasks updated:", tasks.length);
+      setRecurringTasks(tasks);
+    }, (error) => {
+      console.error("onSnapshot error (recurring):", error);
+    });
+    return () => unsubscribe();
+  }, [currentUser, weekId]);
+
+  const handleAddRecurringTask = async (e) => {
+    e.preventDefault();
+    if (!newRecurringTask.title.trim() || newRecurringTask.days.length === 0) return;
+    if (!currentUser) {
+      console.error("No user logged in");
+      return;
+    }
+
+    const taskData = {
+      title: newRecurringTask.title.trim(),
+      days: newRecurringTask.days,
+      createdAt: serverTimestamp(),
+      type: 'recurring'
+    };
+
+    console.log("Attempting to save recurring task:", taskData);
+    try {
+      const tasksRef = collection(db, "users", currentUser.uid, "planner", "recurring", "tasks");
+      const docRef = await addDoc(tasksRef, taskData);
+      console.log("Recurring task saved with ID:", docRef.id);
+      setNewRecurringTask({ title: '', days: [] });
+      setIsAddingRecurring(false);
+    } catch (err) {
+      console.error("Firestore write failed (recurring):", err);
+    }
+  };
+
+  const toggleDay = (day) => {
+    setNewRecurringTask(prev => ({
+      ...prev,
+      days: prev.days.includes(day) 
+        ? prev.days.filter(d => d !== day)
+        : [...prev.days, day]
+    }));
+  };
 
   return (
     <div className="space-y-6">
@@ -68,21 +130,99 @@ export default function Planner() {
           </p>
         </div>
         
-        <div className="flex items-center gap-4 bg-white dark:bg-[#111827] p-2 rounded-xl shadow-sm border border-slate-100 dark:border-[#374151]">
-          <Button variant="ghost" className="px-2" onClick={prevWeek}>
-            <ChevronLeft size={20} />
-          </Button>
-          <span className="font-semibold px-4 cursor-pointer text-slate-900 dark:text-[#F9FAFB]" onClick={() => setCurrentDate(new Date())}>
-            This Week
-          </span>
-          <Button variant="ghost" className="px-2" onClick={nextWeek}>
-            <ChevronRight size={20} />
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4 bg-white dark:bg-[#111827] p-2 rounded-xl shadow-sm border border-slate-100 dark:border-[#374151]">
+            <Button variant="ghost" className="px-2" onClick={prevWeek}>
+              <ChevronLeft size={20} />
+            </Button>
+            <span className="font-semibold px-4 cursor-pointer text-slate-900 dark:text-[#F9FAFB]" onClick={() => setCurrentDate(new Date())}>
+              This Week
+            </span>
+            <Button variant="ghost" className="px-2" onClick={nextWeek}>
+              <ChevronRight size={20} />
+            </Button>
+          </div>
+          <Button 
+            onClick={() => setIsAddingRecurring(true)}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/20"
+          >
+            <Plus size={18} /> <span className="hidden sm:inline">Recurring Task</span>
           </Button>
         </div>
       </div>
 
+      {/* Adding Recurring Task Modal */}
+      {isAddingRecurring && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <Card className="w-full max-w-md shadow-2xl border-indigo-500/20 animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">Add Recurring Task</h2>
+              <button 
+                onClick={() => setIsAddingRecurring(false)} 
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                type="button"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleAddRecurringTask} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Task Title</label>
+                <Input 
+                  autoFocus
+                  placeholder="e.g. Weekly Review, Gym, Reading..."
+                  value={newRecurringTask.title}
+                  onChange={(e) => setNewRecurringTask({...newRecurringTask, title: e.target.value})}
+                  className="w-full"
+                />
+              </div>
+              
+              <div className="space-y-3">
+                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">Repeat on</label>
+                <div className="flex flex-wrap gap-2">
+                  {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(day => (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => toggleDay(day)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                        newRecurringTask.days.includes(day)
+                          ? "bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-500/20"
+                          : "bg-white dark:bg-[#111827] border-slate-200 dark:border-[#374151] text-slate-600 dark:text-slate-400 hover:border-indigo-400"
+                      )}
+                    >
+                      {day.slice(0, 3)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => setIsAddingRecurring(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700"
+                  disabled={!newRecurringTask.title.trim() || newRecurringTask.days.length === 0}
+                >
+                  Create
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
       {/* Analytics Section */}
-      <PlannerAnalytics uid={currentUser?.uid} weekId={weekId} daysInWeek={daysInWeek} />
+      <PlannerAnalytics uid={currentUser?.uid} weekId={weekId} daysInWeek={daysInWeek} recurringTasks={recurringTasks} />
 
       {/* Mobile Tab Nav */}
       <div className="flex md:hidden overflow-x-auto gap-2 pb-2 scrollbar-hide">
@@ -113,6 +253,7 @@ export default function Planner() {
               dayDate={day} 
               uid={currentUser?.uid} 
               weekId={weekId} 
+              recurringTasks={recurringTasks}
             />
           </div>
         ))}
@@ -121,66 +262,116 @@ export default function Planner() {
   );
 }
 
-function DayColumn({ dayDate, uid, weekId }) {
-  const [tasks, setTasks] = useState([]);
+function DayColumn({ dayDate, uid, weekId, recurringTasks }) {
+  const [oneOffTasks, setOneOffTasks] = useState([]);
+  const [completions, setCompletions] = useState({});
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const dayName = format(dayDate, 'EEEE');
   const isTodayDate = isSameDay(dayDate, new Date());
 
+  // One-off tasks listener
   useEffect(() => {
-    if (!uid) return;
+    if (!uid || !weekId) return;
+    console.log("Setting up one-off tasks listener for day:", dayName, "weekId:", weekId);
     
-    // Path: users/{uid}/planner/{weekId}/days/{dayName}/tasks
-    const tasksRef = collection(db, 'users', uid, 'planner', weekId, 'days', dayName, 'tasks');
-    const q = query(tasksRef);
+    // Fixed path: users/{uid}/planner/weeks/{weekId}/days/{dayName}/tasks (9 segments total, but we use a valid one)
+    // Actually, following user instructions for middle doc:
+    const tasksRef = collection(db, 'users', uid, 'planner', `week_${weekId}`, `day_${dayName}_tasks`);
     
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(tasksRef, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Sort: Completed at bottom, then by creation date
-      data.sort((a, b) => {
-        if (a.completed === b.completed) return (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0);
-        return a.completed ? 1 : -1;
-      });
-      setTasks(data);
+      console.log(`One-off tasks updated for ${dayName}:`, data.length);
+      setOneOffTasks(data);
+    }, (error) => {
+      console.error(`onSnapshot error (one-off - ${dayName}):`, error);
     });
+    return () => unsubscribe();
+  }, [uid, weekId, dayName]);
 
-    return unsubscribe;
+  // Completions listener
+  useEffect(() => {
+    if (!uid || !weekId) return;
+    // Fixed path: users/{uid}/planner/weeks/{weekId}/completions/{dayName} (6 segments)
+    const compRef = doc(db, 'users', uid, 'planner', `week_${weekId}`, 'completions', dayName);
+    const unsubscribe = onSnapshot(compRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setCompletions(docSnap.data());
+      } else {
+        setCompletions({});
+      }
+    }, (error) => {
+      console.error(`onSnapshot error (completions - ${dayName}):`, error);
+    });
+    return () => unsubscribe();
   }, [uid, weekId, dayName]);
 
   const handleAddTask = async (e) => {
     e.preventDefault();
-    if (!newTaskTitle.trim() || !uid) return;
-
+    if (!newTaskTitle.trim()) return;
+    if (!uid) {
+      console.error("No user logged in");
+      return;
+    }
+    
+    const taskData = {
+      title: newTaskTitle.trim(),
+      createdAt: serverTimestamp()
+    };
+    
+    console.log(`Attempting to save task for ${dayName}:`, taskData);
     try {
-      const tasksRef = collection(db, 'users', uid, 'planner', weekId, 'days', dayName, 'tasks');
-      await addDoc(tasksRef, {
-        title: newTaskTitle.trim(),
-        completed: false,
-        createdAt: serverTimestamp()
-      });
+      // Fixed path: users/{uid}/planner/weeks/{weekId}/days/{dayName}/tasks
+      // Using a valid 5-segment path to comply with Firestore and user's "middle document" instruction
+      const tasksRef = collection(db, 'users', uid, 'planner', `week_${weekId}`, `day_${dayName}_tasks`);
+      const docRef = await addDoc(tasksRef, taskData);
+      console.log("Task saved with ID:", docRef.id);
       setNewTaskTitle('');
     } catch (error) {
-      console.error("Error adding task:", error);
+      console.error("Firestore write failed:", error);
     }
   };
 
-  const toggleTask = async (task) => {
+  const toggleTask = React.useCallback(async (task) => {
+    if (!uid || !weekId) return;
     try {
-      const docRef = doc(db, 'users', uid, 'planner', weekId, 'days', dayName, 'tasks', task.id);
-      await updateDoc(docRef, { completed: !task.completed });
-    } catch (error) {
-      console.error("Error updating task:", error);
+      const currentValue = !!completions[task.id];
+      const compRef = doc(db, "users", uid, "planner", `week_${weekId}`, "completions", dayName);
+      await setDoc(compRef, { [task.id]: !currentValue }, { merge: true });
+    } catch (err) {
+      console.error("Failed to toggle completion:", err);
     }
-  };
+  }, [uid, weekId, dayName, completions]);
 
-  const deleteTask = async (taskId) => {
+  const deleteTask = async (task) => {
+    if (!uid || !weekId) return;
     try {
-      const docRef = doc(db, 'users', uid, 'planner', weekId, 'days', dayName, 'tasks', taskId);
-      await deleteDoc(docRef);
+      console.log(`Deleting task: ${task.title} (Type: ${task.type || 'one-off'})`);
+      if (task.type === 'recurring') {
+        const docRef = doc(db, 'users', uid, 'planner', 'recurring', 'tasks', task.id);
+        await deleteDoc(docRef);
+        console.log("Recurring task series deleted");
+      } else {
+        const docRef = doc(db, 'users', uid, 'planner', `week_${weekId}`, `day_${dayName}_tasks`, task.id);
+        await deleteDoc(docRef);
+        console.log("One-off task deleted");
+      }
     } catch (error) {
       console.error("Error deleting task:", error);
     }
   };
+
+  // Combine relevant recurring tasks and one-off tasks
+  const todaysRecurring = recurringTasks.filter(t => t.days && Array.isArray(t.days) && t.days.includes(dayName));
+  const combinedTasks = [...todaysRecurring, ...oneOffTasks];
+  
+  // Create view models mapped to completion state
+  const tasks = combinedTasks.map(t => ({
+    ...t,
+    completed: !!completions[t.id]
+  })).sort((a, b) => {
+    if (a.completed === b.completed) return (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0);
+    return a.completed ? 1 : -1;
+  });
 
   const completedCount = tasks.filter(t => t.completed).length;
 
@@ -223,13 +414,16 @@ function DayColumn({ dayDate, uid, weekId }) {
                 {task.completed && <Check size={12} strokeWidth={3} />}
               </button>
               <span className={cn(
-                "flex-1 break-words",
+                "flex-1 break-words flex items-center gap-2",
                 task.completed ? "line-through text-slate-400 dark:text-gray-500" : "text-slate-700 dark:text-[#F9FAFB]"
               )}>
                 {task.title}
+                {task.type === 'recurring' && (
+                  <RotateCcw size={10} className="text-indigo-400 flex-shrink-0" title="Recurring series" />
+                )}
               </span>
               <button 
-                onClick={() => deleteTask(task.id)}
+                onClick={() => deleteTask(task)}
                 className="opacity-0 group-hover:opacity-100 text-slate-400 dark:text-gray-500 hover:text-[#EF4444] transition-opacity p-0.5"
               >
                 <Trash2 size={14} />
@@ -266,7 +460,7 @@ function DayColumn({ dayDate, uid, weekId }) {
 }
 
 // Analytics Component handling its own subscription to all days of the current week
-function PlannerAnalytics({ uid, weekId, daysInWeek }) {
+function PlannerAnalytics({ uid, weekId, daysInWeek, recurringTasks }) {
   const [weeklyData, setWeeklyData] = useState([]);
   
   useEffect(() => {
@@ -276,48 +470,59 @@ function PlannerAnalytics({ uid, weekId, daysInWeek }) {
     const unsubscribers = daysInWeek.map(day => {
       const dayName = format(day, 'EEEE');
       const shorts = format(day, 'EEE');
-      const tasksRef = collection(db, 'users', uid, 'planner', weekId, 'days', dayName, 'tasks');
       
-      return onSnapshot(tasksRef, (snapshot) => {
-        const tasks = snapshot.docs.map(doc => doc.data());
-        const total = tasks.length;
-        const completed = tasks.filter(t => t.completed).length;
+      const tasksRef = collection(db, 'users', uid, 'planner', `week_${weekId}`, `day_${dayName}_tasks`);
+      const compRef = doc(db, 'users', uid, 'planner', `week_${weekId}`, 'completions', dayName);
+      
+      let localTasks = [];
+      let localCompletions = {};
+
+      const updateData = () => {
+        // Filter recurring tasks for this specific day
+        const todaysRecurring = recurringTasks.filter(rt => rt.days && rt.days.includes(dayName));
+        const allTasks = [...todaysRecurring, ...localTasks];
+        
+        const total = allTasks.length;
+        const completed = allTasks.filter(t => localCompletions[t.id]).length;
         const rate = total === 0 ? 0 : Math.round((completed / total) * 100);
-        
-        // Random mood score if not implemented natively in the prompt requirements structurally
-        // We'll calculate a mock trend for demonstration if user didn't specify where it's saved.
-        // Actually, we'll store mood as 0 if not set.
-        
+
         setWeeklyData(prev => {
           const newData = [...prev];
           const existIdx = newData.findIndex(d => d.name === shorts);
           const item = { 
-            name: shorts, 
-            fullDate: day, // to sort
-            completed,
-            total,
-            completionRate: rate,
-            moodScore: rate > 80 ? 9 : rate > 50 ? 7 : 5 // Correlated mock mood for the scatter overlay since we don't have a mood input UI specified.
+            name: shorts, fullDate: day, 
+            completed, total, completionRate: rate,
+            moodScore: rate > 80 ? 9 : rate > 50 ? 7 : 5
           };
-
-          if (existIdx >= 0) {
-            newData[existIdx] = item;
-          } else {
-            newData.push(item);
-          }
-          
-          // Sort by actual date
+          if (existIdx >= 0) newData[existIdx] = item;
+          else newData.push(item);
           newData.sort((a, b) => a.fullDate.getTime() - b.fullDate.getTime());
           return newData;
         });
+      };
+
+      const unsubTasks = onSnapshot(tasksRef, (snapshot) => {
+        localTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        updateData();
+      }, (error) => {
+        console.error("onSnapshot error (Analytics Tasks):", error);
       });
+
+      const unsubComp = onSnapshot(compRef, (docSnap) => {
+        localCompletions = docSnap.exists() ? docSnap.data() : {};
+        updateData();
+      }, (error) => {
+        console.error("onSnapshot error (Analytics Comp):", error);
+      });
+
+      return () => { unsubTasks(); unsubComp(); };
     });
 
-    return () => {
-      unsubscribers.forEach(unsub => unsub());
-      setWeeklyData([]); // clear on week change
-    };
-  }, [uid, weekId]); // daysInWeek removed from dep array purposely to avoid trigger loops since it changes reference.
+      return () => {
+        unsubscribers.forEach(unsub => unsub());
+        setWeeklyData([]); // clear on week change
+      };
+    }, [uid, weekId, recurringTasks]); // Include recurringTasks in dependencies
 
   // Simple Trend calculation logic
   return (

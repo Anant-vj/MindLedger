@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { DataProvider } from './context/DataContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Sidebar from './components/layout/Sidebar';
@@ -8,7 +8,6 @@ import Sidebar from './components/layout/Sidebar';
 // Lazy loaded pages
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Tasks = lazy(() => import('./pages/Tasks'));
-const Habits = lazy(() => import('./pages/Habits'));
 const Insights = lazy(() => import('./pages/Insights'));
 const Planner = lazy(() => import('./pages/Planner'));
 const Login = lazy(() => import('./pages/Login'));
@@ -37,6 +36,52 @@ function LoadingFallback() {
     <div className="flex items-center justify-center h-full min-h-[400px]">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-primary"></div>
     </div>
+  );
+}
+
+// Main routing component to ensure we can consume loading state from context
+function MainRoutes({ layoutProps }) {
+  const { loading } = useAuth();
+  
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen dark:bg-gray-900">
+        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-teal-500" />
+      </div>
+    );
+  }
+
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        
+        <Route path="/" element={
+          <ProtectedRoute>
+            <Layout {...layoutProps}><Dashboard /></Layout>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/tasks" element={
+          <ProtectedRoute>
+            <Layout {...layoutProps}><Tasks /></Layout>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/planner" element={
+          <ProtectedRoute>
+            <Layout {...layoutProps}><Planner /></Layout>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/insights" element={
+          <ProtectedRoute>
+            <Layout {...layoutProps}><Insights /></Layout>
+          </ProtectedRoute>
+        } />
+      </Routes>
+    </Suspense>
   );
 }
 
@@ -70,42 +115,7 @@ function App() {
     <Router>
       <AuthProvider>
         <DataProvider>
-          <Suspense fallback={<LoadingFallback />}>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
-              
-              <Route path="/" element={
-                <ProtectedRoute>
-                  <Layout {...layoutProps}><Dashboard /></Layout>
-                </ProtectedRoute>
-              } />
-              
-              <Route path="/tasks" element={
-                <ProtectedRoute>
-                  <Layout {...layoutProps}><Tasks /></Layout>
-                </ProtectedRoute>
-              } />
-              
-              <Route path="/habits" element={
-                <ProtectedRoute>
-                  <Layout {...layoutProps}><Habits /></Layout>
-                </ProtectedRoute>
-              } />
-
-              <Route path="/planner" element={
-                <ProtectedRoute>
-                  <Layout {...layoutProps}><Planner /></Layout>
-                </ProtectedRoute>
-              } />
-              
-              <Route path="/insights" element={
-                <ProtectedRoute>
-                  <Layout {...layoutProps}><Insights /></Layout>
-                </ProtectedRoute>
-              } />
-            </Routes>
-          </Suspense>
+          <MainRoutes layoutProps={layoutProps} />
         </DataProvider>
       </AuthProvider>
     </Router>

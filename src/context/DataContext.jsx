@@ -25,10 +25,6 @@ export function DataProvider({ children }) {
     const saved = localStorage.getItem('mindledger_tasks');
     return saved ? JSON.parse(saved) : [];
   });
-  const [habits, setHabits] = useState(() => {
-    const saved = localStorage.getItem('mindledger_habits');
-    return saved ? JSON.parse(saved) : [];
-  });
   const [loading, setLoading] = useState(true);
 
   // Sync Tasks
@@ -36,35 +32,25 @@ export function DataProvider({ children }) {
     if (authLoading) return;
     if (!currentUser) {
       setTasks([]);
+      setLoading(false);
       return;
     }
 
-    const q = query(collection(db, 'tasks'), where('userId', '==', currentUser.uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    console.log("Setting up tasks listener for user:", currentUser.uid);
+    // Move from root 'tasks' to 'users/{uid}/tasks' for security and isolation
+    const tasksRef = collection(db, 'users', currentUser.uid, 'tasks');
+    
+    const unsubscribe = onSnapshot(tasksRef, (snapshot) => {
       const taskList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log(`Tasks updated: ${taskList.length} found`);
       setTasks(taskList);
       setLoading(false);
+    }, (error) => {
+      console.error("onSnapshot error (tasks):", error);
     });
 
     return unsubscribe;
-  }, [currentUser]);
-
-  // Sync Habits
-  useEffect(() => {
-    if (authLoading) return;
-    if (!currentUser) {
-      setHabits([]);
-      return;
-    }
-
-    const q = query(collection(db, 'habits'), where('userId', '==', currentUser.uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const habitList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setHabits(habitList);
-    });
-
-    return unsubscribe;
-  }, [currentUser]);
+  }, [currentUser, authLoading]);
 
   // Persist to local storage
   useEffect(() => {
@@ -73,92 +59,60 @@ export function DataProvider({ children }) {
     }
   }, [tasks, loading]);
 
-  useEffect(() => {
-    if (habits.length > 0 || !loading) {
-      localStorage.setItem('mindledger_habits', JSON.stringify(habits));
-    }
-  }, [habits, loading]);
-
   // Task Actions
-  const addTask = useCallback(async (task) => {
+  const addTask = useCallback(async (taskData) => {
+    if (!currentUser) {
+      console.error("Cannot add task: No user logged in");
+      return;
+    }
+
+    console.log("Attempting to add task:", taskData);
     try {
-      await addDoc(collection(db, 'tasks'), {
-        ...task,
+      const tasksRef = collection(db, 'users', currentUser.uid, 'tasks');
+      const docRef = await addDoc(tasksRef, {
+        ...taskData,
         userId: currentUser.uid,
         createdAt: serverTimestamp(),
         completed: false
       });
+      console.log("Task saved successfully with ID:", docRef.id);
     } catch (error) {
-      console.error("Error adding task:", error);
+      console.error("Firestore write failed (addTask):", error);
     }
   }, [currentUser]);
 
   const updateTask = useCallback(async (id, updates) => {
+    if (!currentUser) return;
+    
+    console.log(`Attempting to update task ${id}:`, updates);
     try {
-      await updateDoc(doc(db, 'tasks', id), updates);
+      const docRef = doc(db, 'users', currentUser.uid, 'tasks', id);
+      await updateDoc(docRef, updates);
+      console.log("Task updated successfully");
     } catch (error) {
-      console.error("Error updating task:", error);
-    }
-  }, []);
-
-  const deleteTask = useCallback(async (id) => {
-    try {
-      await deleteDoc(doc(db, 'tasks', id));
-    } catch (error) {
-      console.error("Error deleting task:", error);
-    }
-  }, []);
-
-  // Habit Actions
-  const addHabit = useCallback(async (habit) => {
-    try {
-      await addDoc(collection(db, 'habits'), {
-        ...habit,
-        userId: currentUser.uid,
-        createdAt: serverTimestamp(),
-        completions: [] // Array of ISO date strings
-      });
-    } catch (error) {
-      console.error("Error adding habit:", error);
+      console.error("Firestore write failed (updateTask):", error);
     }
   }, [currentUser]);
 
-  const toggleHabitCompletion = useCallback(async (id, dateStr) => {
+  const deleteTask = useCallback(async (id) => {
+    if (!currentUser) return;
+
+    console.log(`Attempting to delete task ${id}`);
     try {
-      const habit = habits.find(h => h.id === id);
-      if (!habit) return;
-
-      let newCompletions;
-      if (habit.completions.includes(dateStr)) {
-        newCompletions = habit.completions.filter(d => d !== dateStr);
-      } else {
-        newCompletions = [...habit.completions, dateStr];
-      }
-
-      await updateDoc(doc(db, 'habits', id), { completions: newCompletions });
+      const docRef = doc(db, 'users', currentUser.uid, 'tasks', id);
+      await deleteDoc(docRef);
+      console.log("Task deleted successfully");
     } catch (error) {
-      console.error("Error toggling habit completion:", error);
+      console.error("Firestore write failed (deleteTask):", error);
     }
-  }, [habits]);
-
-  const deleteHabit = useCallback(async (id) => {
-    try {
-      await deleteDoc(doc(db, 'habits', id));
-    } catch (error) {
-      console.error("Error deleting habit:", error);
-    }
-  }, []);
+  }, [currentUser]);
 
   const value = {
     tasks,
-    habits,
     loading,
     addTask,
     updateTask,
-    deleteTask,
-    addHabit,
-    toggleHabitCompletion,
-    deleteHabit
+    deleteTask
   };
 
   return (

@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import { 
   LayoutDashboard, 
   CheckSquare, 
-  Flame, 
   BarChart3, 
   LogOut,
   BrainCircuit,
@@ -19,7 +18,6 @@ import { cn } from '../ui';
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/tasks', label: 'Tasks', icon: CheckSquare },
-  { path: '/habits', label: 'Habits', icon: Flame },
   { path: '/planner', label: 'Planner', icon: CalendarDays },
   { path: '/insights', label: 'Insights', icon: BarChart3 },
 ];

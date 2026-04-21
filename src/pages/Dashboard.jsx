@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, Button } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { useProductivity } from '../hooks/useProductivity';
 import { 
@@ -8,19 +9,60 @@ import {
   TrendingUp, 
   Activity,
   Plus,
-  ArrowRight
+  ArrowRight,
+  Smile,
+  Meh,
+  Frown,
+  Angry,
+  Heart
 } from 'lucide-react';
+import { db } from '../services/firebase';
+import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 
 export default function Dashboard() {
-  const { tasks, habits } = useData();
+  const { tasks } = useData();
+  const { currentUser } = useAuth();
   const { 
     productivityScore, 
     burnoutRisk, 
     completedTasks, 
-    overdueTasks,
-    habitConsistency 
+    overdueTasks
   } = useProductivity();
+
+  const [mood, setMood] = useState(null);
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const moodRef = doc(db, 'users', currentUser.uid, 'moods', todayStr);
+    const unsubscribe = onSnapshot(moodRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setMood(docSnap.data().value);
+      }
+    });
+    return () => unsubscribe();
+  }, [currentUser, todayStr]);
+
+  const handleSetMood = async (value) => {
+    if (!currentUser) return;
+    try {
+      const moodRef = doc(db, 'users', currentUser.uid, 'moods', todayStr);
+      await setDoc(moodRef, { value, updatedAt: new Date().toISOString() });
+      setMood(value);
+    } catch (err) {
+      console.error("Failed to save mood:", err);
+    }
+  };
+
+  const moods = [
+    { value: 'terrible', icon: Angry, color: 'text-red-500', label: 'Terrible', bg: 'bg-red-50 dark:bg-red-500/10' },
+    { value: 'bad', icon: Frown, color: 'text-orange-500', label: 'Bad', bg: 'bg-orange-50 dark:bg-orange-500/10' },
+    { value: 'okay', icon: Meh, color: 'text-amber-500', label: 'Okay', bg: 'bg-amber-50 dark:bg-amber-500/10' },
+    { value: 'good', icon: Smile, color: 'text-emerald-500', label: 'Good', bg: 'bg-emerald-50 dark:bg-emerald-500/10' },
+    { value: 'excellent', icon: Heart, color: 'text-indigo-500', label: 'Excellent', bg: 'bg-indigo-50 dark:bg-indigo-500/10' },
+  ];
 
   const activeTasks = tasks.filter(t => !t.completed).slice(0, 3);
 
@@ -32,7 +74,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <StatCard 
           title="Productivity Score" 
           value={`${productivityScore}%`} 
@@ -58,14 +100,34 @@ export default function Dashboard() {
           color="text-[#10B981] bg-[#10B981]/10 dark:bg-[#10B981]/20"
           subtitle="Total tasks finished"
         />
-        <StatCard 
-          title="Habit Consistency" 
-          value={`${habitConsistency}%`} 
-          icon={AlertCircle}
-          color="text-[#6366F1] bg-[#6366F1]/10 dark:bg-[#6366F1]/20"
-          subtitle="Last 7 days performance"
-        />
       </div>
+
+      {/* Mood Tracker */}
+      <Card className="p-6 border-none shadow-lg bg-white dark:bg-[#111827]">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">How are you feeling today?</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Your mood helps us adjust your productivity insights.</p>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            {moods.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => handleSetMood(m.value)}
+                className={cn(
+                  "flex flex-col items-center gap-2 p-3 rounded-2xl transition-all duration-200 border-2",
+                  mood === m.value 
+                    ? `border-indigo-500 ${m.bg} scale-105 shadow-md` 
+                    : "border-transparent bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800"
+                )}
+              >
+                <m.icon size={28} className={m.color} />
+                <span className="text-xs font-bold text-slate-600 dark:text-slate-300">{m.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Recent Tasks */}
@@ -120,10 +182,6 @@ export default function Dashboard() {
                 <span className="text-white/90 font-medium">Pending Tasks</span>
                 <span className="text-2xl font-bold">{tasks.filter(t => !t.completed).length}</span>
               </div>
-              <div className="flex justify-between items-center bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/10">
-                <span className="text-white/90 font-medium">Active Habits</span>
-                <span className="text-2xl font-bold">{habits.length}</span>
-              </div>
             </div>
             <Link to="/tasks">
                <Button className="w-full mt-6 bg-white text-[#6366F1] hover:bg-slate-50 shadow-sm font-semibold">
@@ -134,7 +192,7 @@ export default function Dashboard() {
 
           <Card className="border-2 border-dashed border-slate-200 dark:border-[#374151] flex flex-col items-center justify-center p-8 text-slate-500 dark:text-[#9CA3AF] bg-transparent">
             <TrendingUp size={40} className="mb-3 text-[#6366F1] opacity-80" />
-            <p className="text-sm font-medium text-center">Consistent habits lead to 40% better academic results.</p>
+            <p className="text-sm font-medium text-center">Consistent task management leads to better academic results.</p>
           </Card>
         </div>
       </div>
